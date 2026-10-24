@@ -169,9 +169,17 @@ function renderForm(state) {
   for (const d of state.documents) {
     const stateLine = el('span', { class: 'state', text: 'Not signed yet' })
     const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
-    const block = el('div', { class: 'doc' }, [el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])]), pages])
+    // The viewer's toolbar: where the reader is, a jump to the signing spot, the PDF itself.
+    const counter = el('span', { class: 'counter' })
+    const jump = el('button', { type: 'button', class: 'link', text: 'Go to signature', hidden: true })
+    const open = el('a', { class: 'link', text: 'Open in a new tab ↗', target: '_blank', rel: 'noopener', hidden: true })
+    const tools = el('div', { class: 'tools' }, [counter, el('span', { class: 'grow' }), jump, open])
+    const block = el('div', { class: 'doc' }, [el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])]), tools, pages])
     list.appendChild(block)
-    docs.push({ n: d.n, block, pages, stateLine, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null })
+    const doc = { n: d.n, block, pages, stateLine, counter, jump, open, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null }
+    jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
+    docs.push(doc)
+    pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
   }
 
   $('consent-text').textContent = state.consent_text
@@ -243,6 +251,7 @@ async function drawPages(doc) {
   doc.drawnAt = width
   host.textContent = ''
   doc.spot = null
+  doc.pageTops = []
   for (let num = 1; num <= pdf.numPages; num++) {
     const page = await pdf.getPage(num)
     const base = page.getViewport({ scale: 1 })
@@ -260,6 +269,24 @@ async function drawPages(doc) {
     if (doc.where && doc.where.page === num - 1) wrap.appendChild(spotTab(doc, doc.where, base, scale))
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
   }
+  doc.jump.hidden = !doc.spot
+  updateCounter(doc)
+  if (!doc.open.href) {
+    const bytes = await pdf.getData()
+    doc.open.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    doc.open.hidden = false
+  }
+}
+
+/** "Page x of y": the page whose top is closest above the middle of the viewer. */
+function updateCounter(doc) {
+  const pdf = doc.loaded
+  if (!pdf) return
+  const pages = Array.from(doc.pages.querySelectorAll('.page'))
+  const middle = doc.pages.scrollTop + doc.pages.clientHeight / 2
+  let current = 1
+  pages.forEach((p, i) => { if (p.offsetTop <= middle) current = i + 1 })
+  doc.counter.textContent = `Page ${current} of ${pdf.numPages}`
 }
 
 function renderDoc(doc) {

@@ -40,7 +40,11 @@ input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px r
 .doc .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
 .doc .state { font-size: 12px; color: var(--ink-subtle); }
 .doc.signed .state { color: var(--ok); font-weight: 500; }
-.pages { background: #e9eef3; border: 1px solid var(--line-strong); border-radius: 4px; padding: 12px; }
+.doc .tools { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ink-subtle); padding: 6px 10px; border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 4px 4px 0 0; background: var(--hover); }
+.doc .tools .grow { flex: 1; }
+.doc .tools .link { font-size: 12px; text-decoration: none; }
+.doc .tools .link:hover { text-decoration: underline; }
+.pages { background: #e9eef3; border: 1px solid var(--line-strong); border-radius: 0 0 4px 4px; padding: 12px; max-height: 85vh; overflow: auto; }
 .page { position: relative; margin: 0 auto 12px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); line-height: 0; }
 .page:last-child { margin-bottom: 0; }
 .page canvas { width: 100%; height: auto; display: block; }
@@ -76,4 +80,4 @@ button { font: inherit; }
 .ok { color: var(--ok); }
 .banner { background: #fffbeb; border: 1px solid #f59e0b; color: #78350f; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 16px; }
 [hidden] { display: none !important; }
-@media (max-width: 640px) { main { padding: 20px 14px 64px; } section { padding: 16px; } .pages { padding: 6px; } }
+@media (max-width: 640px) { main { padding: 20px 14px 64px; } section { padding: 16px; } .pages { padding: 6px; max-height: 80vh; } }
