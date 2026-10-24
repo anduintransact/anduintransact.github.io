@@ -175,15 +175,23 @@ function documentPanel(d) {
   return doc
 }
 
+/** "1 October 2026" from an ISO date; the date as given when it does not parse. */
+function longDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
 function renderForm(state) {
   displayName = state.display_name || ''
+  $('welcome').textContent = displayName ? `Welcome to Anduin, ${displayName}!` : 'Welcome to Anduin!'
   const greeting = $('greeting')
   greeting.textContent = ''
-  greeting.append('Hello ', el('strong', { text: state.display_name }), '.')
-  if (state.start_date) greeting.append(' Expected start date: ', el('strong', { text: state.start_date }), '.')
+  greeting.append("We're glad you're joining us")
+  if (state.start_date) greeting.append(' on ', el('strong', { text: longDate(state.start_date) }))
   greeting.append(state.documents.length > 0
-    ? ' Please read and sign each document, then fill in your details, so Anduin can prepare your file before your first day.'
-    : ' Please fill in the details below, so Anduin can prepare your file before your first day.')
+    ? ". Here's what we need before your first day: read and sign the documents below, then fill in your details. It usually takes about 15 minutes."
+    : ". Here's what we need before your first day: fill in your details below. It only takes a few minutes.")
 
   const sections = $('sections')
   sections.textContent = ''
