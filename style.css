@@ -53,9 +53,6 @@ input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px r
 .nav { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .nav .grow { flex: 1; }
 .nav .submit { width: auto; padding: 8px 16px; }
-.doc .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
-.doc .state { font-size: 12px; color: var(--ink-subtle); }
-.doc.signed .state { color: var(--ok); font-weight: 500; }
 .about { margin: -4px 0 12px; font-size: 13px; }
 .about summary { cursor: pointer; color: var(--brand); font-weight: 500; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
 .about summary::-webkit-details-marker { display: none; }

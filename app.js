@@ -127,7 +127,7 @@ $('gate-form').addEventListener('submit', async (e) => {
 // ---- the form: one step per document, then the questions -------------------------------------
 
 let inputs = []
-let docs = []          // [{ n, label, panel, pages, stateLine, counter, jump, download, where, spot, pdf, loaded, drawnAt }]
+let docs = []          // [{ n, label, panel, pages, counter, jump, download, where, spot, pdf, loaded, drawnAt }]
 let steps = []         // [{ kind: 'doc', doc } | { kind: 'form' }]
 let current = 0
 let signature = null   // one signature image per person (drawn or typed), placed per document
@@ -150,18 +150,16 @@ function fieldBlock(f, draft) {
   return block
 }
 
-/** A document's step: its title and state, a toolbar, and the pages drawn by PDF.js. */
+/** A document's step: HR's note if any, a toolbar, and the pages drawn by PDF.js. */
 function documentPanel(d) {
-  const stateLine = el('span', { class: 'state', text: 'Not signed yet' })
   const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
   const counter = el('span', { class: 'counter' })
   const jump = el('button', { type: 'button', class: 'link', text: 'Go to signature', hidden: true })
   const download = el('a', { class: 'link', text: 'Download PDF ↓', download: `${d.label}.pdf`, hidden: true })
   const tools = el('div', { class: 'tools' }, [counter, el('span', { class: 'grow' }), jump, download])
-  const head = el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])])
-  const hint = el('p', { class: 'hint', text: 'Read the document, then click Sign here on it to sign. You can download it to read offline.' })
-  hint.style.margin = '-4px 0 12px'
-  const parts = [head, hint]
+  // No title or instruction above the paper: the step list names the document, and the
+  // "Sign here" tab on the page says what to do.
+  const parts = []
   if (d.note) {
     // HR's plain-language note from the document type: what it is and why it is asked for.
     // Paragraphs on a blank line; a line break inside a sentence (as pasted) is just a space.
@@ -169,7 +167,7 @@ function documentPanel(d) {
     parts.push(el('details', { class: 'about' }, [el('summary', { text: "What's this document?" }), el('div', { class: 'text' }, paragraphs.map((t) => el('p', { text: t })))]))
   }
   const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [...parts, tools, pages])])
-  const doc = { n: d.n, label: d.label, panel, pages, stateLine, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
+  const doc = { n: d.n, label: d.label, panel, pages, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
   jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
   pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
   return doc
@@ -304,7 +302,6 @@ function placeOn(doc) {
   if (!doc.mock) layoutSpot(doc)
   placed[doc.n] = true
   doc.panel.querySelector('.doc').classList.add('signed')
-  doc.stateLine.textContent = 'Signed'
   markSteps()
 }
 
