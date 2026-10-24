@@ -499,9 +499,11 @@ function closePad() { veil.classList.remove('open'); pending = null }
 
 // --- typed: the name in a script font, drawn to a PNG like the pad's ---------------------
 const STYLES = [
-  { id: 'vibes', family: 'Sig Vibes', label: 'Style 1' },
-  { id: 'allura', family: 'Sig Allura', label: 'Style 2' },
-  { id: 'dancing', family: 'Sig Dancing', label: 'Style 3' },
+  { id: 'qwigley', family: 'Sig Qwigley', label: 'Style 1' },
+  { id: 'kristi', family: 'Sig Kristi', label: 'Style 2' },
+  { id: 'caveat', family: 'Sig Caveat', label: 'Style 3' },
+  { id: 'apple', family: 'Sig Apple', label: 'Style 4' },
+  { id: 'zeyada', family: 'Sig Zeyada', label: 'Style 5' },
 ]
 let tab = 'draw'
 let styleId = STYLES[0].id
@@ -543,7 +545,8 @@ $('sig-name').addEventListener('input', renderStyles)
 /** The typed name as a PNG data URL, sized to the text, transparent background. */
 async function typedSignature(name, family) {
   const size = 96
-  const font = `${size}px '${family}', cursive`
+  // Regular weight, spelled out: a browser must not synthesise bold for a single-weight face.
+  const font = `400 ${size}px '${family}', cursive`
   try { await document.fonts.load(font, name) } catch { /* the fallback font draws instead */ }
   const c = document.createElement('canvas')
   const g = c.getContext('2d')
