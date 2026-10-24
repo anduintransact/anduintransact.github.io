@@ -2,7 +2,7 @@
  * The pre-boarding page. The link is `https://anduintransact.github.io/#<token>`: the token
  * stays in the fragment, which the browser never sends to the host, and goes to the API in a
  * header. The page draws itself from what `GET /state` answers: the e-mail gate first, then
- * the questions, the documents with a "Sign here" tab on each, the consent line.
+ * one step per document to read and sign, and a last step with the questions to answer.
  *
  * Plain browser JavaScript, one module, no build step: the file is served as written. PDF.js
  * (vendored under vendor/pdfjs) draws each document so the person signs on the paper
@@ -121,10 +121,12 @@ $('gate-form').addEventListener('submit', async (e) => {
   }
 })
 
-// ---- the form ------------------------------------------------------------------------------
+// ---- the form: one step per document, then the questions -------------------------------------
 
 let inputs = []
-let docs = []          // [{ n, block, pages, stateLine, where, spot, pdf, loaded }]
+let docs = []          // [{ n, label, panel, pages, stateLine, counter, jump, download, where, spot, pdf, loaded, drawnAt }]
+let steps = []         // [{ kind: 'doc', doc } | { kind: 'form' }]
+let current = 0
 let signature = null   // one drawing per person, placed per document
 const placed = {}
 
@@ -142,13 +144,32 @@ function fieldBlock(f, draft) {
   return block
 }
 
+/** A document's step: its title and state, a toolbar, and the pages drawn by PDF.js. */
+function documentPanel(d) {
+  const stateLine = el('span', { class: 'state', text: 'Not signed yet' })
+  const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
+  const counter = el('span', { class: 'counter' })
+  const jump = el('button', { type: 'button', class: 'link', text: 'Go to signature', hidden: true })
+  const download = el('a', { class: 'link', text: 'Download PDF ↓', download: `${d.label}.pdf`, hidden: true })
+  const tools = el('div', { class: 'tools' }, [counter, el('span', { class: 'grow' }), jump, download])
+  const head = el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])])
+  const hint = el('p', { class: 'hint', text: 'Read the document, then click Sign here on it to sign. You can download it to read offline.' })
+  hint.style.margin = '-4px 0 12px'
+  const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [head, hint, tools, pages])])
+  const doc = { n: d.n, label: d.label, panel, pages, stateLine, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
+  jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
+  pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
+  return doc
+}
+
 function renderForm(state) {
-  const start = state.start_date ? ' Expected start date: ' : ''
   const greeting = $('greeting')
   greeting.textContent = ''
   greeting.append('Hello ', el('strong', { text: state.display_name }), '.')
-  if (start) greeting.append(start, el('strong', { text: state.start_date }), '.')
-  greeting.append(' Please fill in the details below, read the documents and sign, so Anduin can prepare your file before your first day.')
+  if (state.start_date) greeting.append(' Expected start date: ', el('strong', { text: state.start_date }), '.')
+  greeting.append(state.documents.length > 0
+    ? ' Please read and sign each document, then fill in your details, so Anduin can prepare your file before your first day.'
+    : ' Please fill in the details below, so Anduin can prepare your file before your first day.')
 
   const sections = $('sections')
   sections.textContent = ''
@@ -159,43 +180,68 @@ function renderForm(state) {
   }
   inputs = Array.from(sections.querySelectorAll('input[data-key]'))
   inputs.forEach((i) => i.addEventListener('input', saveDraftSoon))
-
-  const list = $('doc-list')
-  list.textContent = ''
-  docs = []
-  $('docs').hidden = state.documents.length === 0
-  $('docs-hint').textContent = ''
-  $('docs-hint').append(`Read ${state.documents.length > 1 ? 'each document' : 'the document'}, then click `, el('strong', { text: 'Sign here' }), ' on it to sign.')
-  for (const d of state.documents) {
-    const stateLine = el('span', { class: 'state', text: 'Not signed yet' })
-    const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
-    // The viewer's toolbar: where the reader is, a jump to the signing spot, the PDF itself.
-    const counter = el('span', { class: 'counter' })
-    const jump = el('button', { type: 'button', class: 'link', text: 'Go to signature', hidden: true })
-    const open = el('a', { class: 'link', text: 'Open in a new tab ↗', target: '_blank', rel: 'noopener', hidden: true })
-    const tools = el('div', { class: 'tools' }, [counter, el('span', { class: 'grow' }), jump, open])
-    const block = el('div', { class: 'doc' }, [el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])]), tools, pages])
-    list.appendChild(block)
-    const doc = { n: d.n, block, pages, stateLine, counter, jump, open, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null }
-    jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
-    docs.push(doc)
-    pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
-  }
-
   $('consent-text').textContent = state.consent_text
   $('consent').checked = false
-  $('submit').disabled = PREVIEW
+
+  const panels = $('panels')
+  panels.textContent = ''
+  docs = state.documents.map(documentPanel)
+  docs.forEach((d) => panels.appendChild(d.panel))
+  steps = [...docs.map((doc) => ({ kind: 'doc', doc })), { kind: 'form' }]
+
+  const list = $('steps')
+  list.textContent = ''
+  list.hidden = steps.length === 1
+  steps.forEach((s, i) => {
+    const name = s.kind === 'doc' ? s.doc.label : 'Your details'
+    const button = el('button', { type: 'button' }, [el('span', { class: 'num', text: String(i + 1) }), el('span', { class: 'name', text: name })])
+    button.addEventListener('click', () => go(i))
+    list.appendChild(el('li', {}, [button]))
+  })
+
   $('banner').hidden = !PREVIEW
-  // Shown first: a document is drawn to the width its block has, which is nothing while hidden.
+  $('submit').disabled = PREVIEW
   show('form-wrap')
-  docs.forEach(renderDoc)
+  go(0)
 }
 
-// A narrower or wider window redraws the documents at the new width; the signature stays placed.
+/** Shows step `i`: one panel at a time, the stepper and the buttons following it. */
+function go(i) {
+  current = Math.max(0, Math.min(steps.length - 1, i))
+  steps.forEach((s, k) => {
+    const panel = s.kind === 'doc' ? s.doc.panel : $('panel-form')
+    panel.hidden = k !== current
+  })
+  Array.from($('steps').children).forEach((li, k) => {
+    const s = steps[k]
+    li.classList.toggle('current', k === current)
+    li.classList.toggle('done', s.kind === 'doc' && !!placed[s.doc.n])
+    li.querySelector('.num').textContent = s.kind === 'doc' && placed[s.doc.n] ? '✓' : String(k + 1)
+  })
+  $('back').hidden = current === 0
+  $('next').hidden = current === steps.length - 1
+  $('submit').hidden = current !== steps.length - 1
+  $('status').textContent = ''
+  const step = steps[current]
+  if (step.kind === 'doc') {
+    // Drawn once the panel is visible: a hidden block has no width to draw to.
+    if (step.doc.loaded) drawPages(step.doc)
+    else if (!step.doc.started) { step.doc.started = true; renderDoc(step.doc) }
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+$('back').addEventListener('click', () => go(current - 1))
+$('next').addEventListener('click', () => go(current + 1))
+
+// A narrower or wider window redraws the visible document at the new width.
 let resizeTimer = null
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer)
-  resizeTimer = setTimeout(() => docs.forEach((d) => { if (d.loaded) drawPages(d) }), 200)
+  resizeTimer = setTimeout(() => {
+    const step = steps[current]
+    if (step && step.kind === 'doc' && step.doc.loaded) drawPages(step.doc)
+  }, 200)
 })
 
 // Draft: saved a moment after typing stops, so closing the tab loses nothing.
@@ -220,8 +266,19 @@ function placeOn(doc) {
   doc.spot.classList.add('done')
   doc.spot.title = 'Click to sign again'
   placed[doc.n] = true
-  doc.block.classList.add('signed')
+  doc.panel.querySelector('.doc').classList.add('signed')
   doc.stateLine.textContent = 'Signed'
+  markSteps()
+}
+
+/** The stepper's ticks: a signed document shows a check instead of its number. */
+function markSteps() {
+  Array.from($('steps').children).forEach((li, k) => {
+    const s = steps[k]
+    const done = s.kind === 'doc' && !!placed[s.doc.n]
+    li.classList.toggle('done', done)
+    li.querySelector('.num').textContent = done ? '✓' : String(k + 1)
+  })
 }
 
 function spotTab(doc, where, base, scale) {
@@ -246,12 +303,12 @@ function pageWidth(host) {
 async function drawPages(doc) {
   const host = doc.pages
   const pdf = doc.loaded
+  if (host.clientWidth === 0) return
   const width = pageWidth(host)
   if (doc.drawnAt === width) return
   doc.drawnAt = width
   host.textContent = ''
   doc.spot = null
-  doc.pageTops = []
   for (let num = 1; num <= pdf.numPages; num++) {
     const page = await pdf.getPage(num)
     const base = page.getViewport({ scale: 1 })
@@ -271,10 +328,11 @@ async function drawPages(doc) {
   }
   doc.jump.hidden = !doc.spot
   updateCounter(doc)
-  if (!doc.open.href) {
+  if (!doc.download.href) {
+    // The same bytes the viewer drew, offered as a file to read offline.
     const bytes = await pdf.getData()
-    doc.open.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-    doc.open.hidden = false
+    doc.download.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    doc.download.hidden = false
   }
 }
 
@@ -284,9 +342,9 @@ function updateCounter(doc) {
   if (!pdf) return
   const pages = Array.from(doc.pages.querySelectorAll('.page'))
   const middle = doc.pages.scrollTop + doc.pages.clientHeight / 2
-  let current = 1
-  pages.forEach((p, i) => { if (p.offsetTop <= middle) current = i + 1 })
-  doc.counter.textContent = `Page ${current} of ${pdf.numPages}`
+  let page = 1
+  pages.forEach((p, i) => { if (p.offsetTop <= middle) page = i + 1 })
+  doc.counter.textContent = `Page ${page} of ${pdf.numPages}`
 }
 
 function renderDoc(doc) {
@@ -301,6 +359,7 @@ function renderDoc(doc) {
     mock.appendChild(tab)
     host.textContent = ''
     host.appendChild(mock)
+    doc.jump.hidden = false
     return
   }
   const source = doc.pdf
@@ -402,8 +461,9 @@ $('form').addEventListener('submit', async (e) => {
   showErrors({})
   const unsigned = docs.filter((d) => !placed[d.n])
   if (unsigned.length) {
-    status.textContent = 'Please sign each document where it says "Sign here".'
-    unsigned[0].block.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Back to the first document still unsigned, with the reason under its buttons.
+    go(steps.findIndex((s) => s.kind === 'doc' && s.doc === unsigned[0]))
+    status.textContent = 'Please sign this document where it says "Sign here" before submitting.'
     return
   }
   if (!$('consent').checked) { status.textContent = 'Please tick the confirmation before submitting.'; return }
@@ -416,6 +476,7 @@ $('form').addEventListener('submit', async (e) => {
     if (res.ok) {
       clearTimeout(timer)
       $('form').hidden = true
+      $('steps').hidden = true
       $('done').hidden = false
       window.scrollTo(0, 0)
       return

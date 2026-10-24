@@ -48,17 +48,21 @@
   <div id="form-wrap" hidden>
     <h1>New hire onboarding</h1>
     <p class="lead" id="greeting"></p>
+    <ol id="steps" class="steps" aria-label="Steps"></ol>
     <form id="form" novalidate>
-      <div id="sections"></div>
-      <section id="docs" hidden>
-        <h2>Documents to sign</h2>
-        <p class="hint" style="margin:-6px 0 14px" id="docs-hint"></p>
-        <div id="doc-list"></div>
-      </section>
-      <section>
-        <label class="check"><input type="checkbox" id="consent"><span id="consent-text"></span></label>
-      </section>
-      <button type="submit" id="submit" class="submit">Sign and submit</button>
+      <div id="panels"></div>
+      <div class="panel" id="panel-form" hidden>
+        <div id="sections"></div>
+        <section>
+          <label class="check"><input type="checkbox" id="consent"><span id="consent-text"></span></label>
+        </section>
+      </div>
+      <div class="nav">
+        <button type="button" id="back" class="ghost" hidden>Back</button>
+        <span class="grow"></span>
+        <button type="button" id="next" class="primary" hidden>Next</button>
+        <button type="submit" id="submit" class="submit" hidden>Sign and submit</button>
+      </div>
       <p id="status" class="status" role="alert"></p>
     </form>
     <section id="done" hidden>
