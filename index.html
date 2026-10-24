@@ -13,7 +13,7 @@
   That frame must not be sandboxed without allow-same-origin: an opaque origin makes 'self'
   match nothing and the script is refused.)
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self' blob:; img-src data: blob:; connect-src https://xecrgruemilgdimrbgec.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self' blob:; img-src data: blob:; font-src 'self'; connect-src https://xecrgruemilgdimrbgec.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="api-base" content="https://xecrgruemilgdimrbgec.supabase.co/functions/v1/form">
 <title>New hire onboarding — Anduin</title>
 <link rel="stylesheet" href="style.css">
@@ -75,9 +75,20 @@
 <div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veil-title">
   <div class="dialog">
     <h2 id="veil-title">Your signature</h2>
-    <p class="lead">Sign with your finger or mouse in the box. It will be placed where you clicked.</p>
-    <canvas id="sig" class="pad"></canvas>
-    <div class="row" style="margin:8px 0 0"><span class="hint">Nothing is sent until you submit the form.</span><button type="button" id="clear" class="link">Clear</button></div>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tab-draw" class="tab current" role="tab" aria-selected="true">Draw</button>
+      <button type="button" id="tab-type" class="tab" role="tab" aria-selected="false">Type</button>
+    </div>
+    <div id="pane-draw">
+      <p class="lead">Sign with your finger or mouse in the box. It will be placed where you clicked, and you can resize it there.</p>
+      <canvas id="sig" class="pad"></canvas>
+      <div class="row" style="margin:8px 0 0"><span class="hint">Nothing is sent until you submit the form.</span><button type="button" id="clear" class="link">Clear</button></div>
+    </div>
+    <div id="pane-type" hidden>
+      <p class="lead">Type your name and pick a style. It will be placed where you clicked, and you can resize it there.</p>
+      <div class="field"><label for="sig-name">Your name</label><input id="sig-name" type="text" maxlength="80" autocomplete="off"></div>
+      <div id="styles" class="styles" role="radiogroup" aria-label="Signature style"></div>
+    </div>
     <div class="actions"><button type="button" id="cancel" class="ghost">Cancel</button><button type="button" id="apply" class="primary">Place signature</button></div>
   </div>
 </div>

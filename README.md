@@ -14,6 +14,7 @@ e-mail matched, from the onboarding API, and goes back there on submit.
 | `app.js` | The gate, the form, the documents drawn with PDF.js, the "Sign here" tab, the signature dialog, the submit. |
 | `style.css` | HiveFin's light theme, written out. |
 | `vendor/pdfjs/` | PDF.js 4.10.38 (`pdf.min.mjs` → `pdf.js`, `pdf.worker.min.mjs` → `pdf.worker.js`) from cdnjs, unmodified. SHA-256: `27fc2a05…190a9c` and `1baa1844…4be36`. |
+| `vendor/fonts/` | Great Vibes, Allura and Dancing Script (SIL Open Font License, `OFL.txt`), the styles offered for a typed signature. |
 | `.nojekyll` | Tells GitHub Pages to serve the files as they are. |
 
 The source of truth is `onboarding/site/` in the HiveFin repository; this repository is

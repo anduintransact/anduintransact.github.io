@@ -127,8 +127,11 @@ let inputs = []
 let docs = []          // [{ n, label, panel, pages, stateLine, counter, jump, download, where, spot, pdf, loaded, drawnAt }]
 let steps = []         // [{ kind: 'doc', doc } | { kind: 'form' }]
 let current = 0
-let signature = null   // one drawing per person, placed per document
-const placed = {}
+let signature = null   // one signature image per person (drawn or typed), placed per document
+let method = 'drawn'   // how `signature` was made: 'drawn' | 'typed'
+let signatureAspect = 1 // width / height of the image, so a resized box keeps its shape
+const placed = {}      // n → true once the person put the signature on that document
+let displayName = ''
 
 function fieldBlock(f, draft) {
   const label = el('label', { for: f.key, text: f.label })
@@ -168,6 +171,7 @@ function documentPanel(d) {
 }
 
 function renderForm(state) {
+  displayName = state.display_name || ''
   const greeting = $('greeting')
   greeting.textContent = ''
   greeting.append('Hello ', el('strong', { text: state.display_name }), '.')
@@ -264,16 +268,91 @@ function saveDraftSoon() {
 
 // ---- the documents, drawn page by page, each with its signing spot ----------------------------
 
+/**
+ * Puts the signature on a document's spot. The first time, the box is fitted to the image
+ * inside the marked spot, anchored on its bottom-left (the signature line); after that the
+ * box the person set is kept, in PDF points, so a redraw at another width puts it back.
+ */
 function placeOn(doc) {
   if (!doc.spot || !signature) return
-  doc.spot.textContent = ''
-  doc.spot.appendChild(el('img', { src: signature, alt: 'Your signature' }))
-  doc.spot.classList.add('done')
-  doc.spot.title = 'Click to sign again'
+  if (!doc.box || doc.boxFor !== signature) {
+    // Fitted inside the marked spot, as the stamp fits it, keeping the image's shape.
+    const w = doc.where
+    const width = Math.min(w.width, w.height * signatureAspect)
+    doc.box = { page: w.page, x: w.x, y: w.y, width, height: width / signatureAspect }
+    doc.boxFor = signature
+  }
+  const spot = doc.spot
+  spot.textContent = ''
+  spot.appendChild(el('img', { src: signature, alt: 'Your signature' }))
+  spot.appendChild(el('span', { class: 'grip', title: 'Drag to resize' }))
+  spot.classList.add('done')
+  spot.title = 'Drag to move, drag the corner to resize, click to sign again'
+  if (!doc.mock) layoutSpot(doc)
   placed[doc.n] = true
   doc.panel.querySelector('.doc').classList.add('signed')
   doc.stateLine.textContent = 'Signed'
   markSteps()
+}
+
+/** The spot's CSS box from its PDF box (or the marked spot before anything is placed). */
+function layoutSpot(doc) {
+  const b = doc.box && placed[doc.n] ? doc.box : doc.where
+  const tab = doc.spot
+  tab.style.left = (b.x * doc.scale) + 'px'
+  tab.style.top = ((doc.pageHeight - b.y - b.height) * doc.scale) + 'px'
+  tab.style.width = (b.width * doc.scale) + 'px'
+  tab.style.height = (b.height * doc.scale) + 'px'
+}
+
+/** The box in PDF points, as HiveFin stamps it; null when the marked spot was left as is. */
+function toPdfBox(doc) {
+  return doc.box && placed[doc.n] ? { page: doc.box.page, x: doc.box.x, y: doc.box.y, width: doc.box.width, height: doc.box.height } : null
+}
+
+/**
+ * Moving and resizing a placed signature with the pointer: dragging the body moves the box,
+ * dragging the corner grip scales it (same shape), both kept on the page. A click with no
+ * movement opens the dialog to sign again.
+ */
+function dragOn(doc, tab) {
+  let start = null
+  tab.addEventListener('pointerdown', (e) => {
+    if (!placed[doc.n] || !doc.box) return
+    const grip = e.target.classList.contains('grip')
+    start = { x: e.clientX, y: e.clientY, box: { ...doc.box }, grip, moved: false }
+    tab.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  })
+  tab.addEventListener('pointermove', (e) => {
+    if (!start) return
+    const dx = (e.clientX - start.x) / doc.scale
+    const dy = (e.clientY - start.y) / doc.scale
+    if (Math.abs(dx) + Math.abs(dy) > 2 / doc.scale) start.moved = true
+    const b = start.box
+    const pageW = doc.pageWidth, pageH = doc.pageHeight
+    if (start.grip) {
+      // The grip sits top-right: pulling it right or up grows the box from its bottom-left.
+      const width = Math.min(Math.max(b.width + dx, 20), pageW - b.x)
+      const height = Math.min(width / signatureAspect, pageH - b.y)
+      doc.box = { ...b, width: Math.min(width, height * signatureAspect), height }
+    } else {
+      doc.box = {
+        ...b,
+        x: Math.min(Math.max(b.x + dx, 0), pageW - b.width),
+        y: Math.min(Math.max(b.y - dy, 0), pageH - b.height),
+      }
+    }
+    layoutSpot(doc)
+  })
+  const end = (e) => {
+    if (!start) return
+    const click = !start.moved
+    start = null
+    if (click && !e.target.classList.contains('grip')) openPad(doc)
+  }
+  tab.addEventListener('pointerup', end)
+  tab.addEventListener('pointercancel', () => { start = null })
 }
 
 /** The stepper's ticks: a signed document shows a check instead of its number. */
@@ -289,12 +368,13 @@ function markSteps() {
 function spotTab(doc, where, base, scale) {
   // PDF points, origin bottom-left, to CSS pixels from the top-left of the page.
   const tab = el('button', { type: 'button', class: 'spot', text: 'Sign here' })
-  tab.style.left = (where.x * scale) + 'px'
-  tab.style.top = ((base.height - where.y - where.height) * scale) + 'px'
-  tab.style.width = (where.width * scale) + 'px'
-  tab.style.height = (where.height * scale) + 'px'
-  tab.addEventListener('click', () => openPad(doc))
+  doc.scale = scale
+  doc.pageWidth = base.width
+  doc.pageHeight = base.height
   doc.spot = tab
+  layoutSpot(doc)
+  tab.addEventListener('click', () => { if (!placed[doc.n]) openPad(doc) })
+  dragOn(doc, tab)
   if (placed[doc.n]) placeOn(doc)
   return tab
 }
@@ -361,6 +441,11 @@ function renderDoc(doc) {
     tab.style.cssText = 'left:12%;bottom:14%;width:150px;height:36px'
     tab.addEventListener('click', () => openPad(doc))
     doc.spot = tab
+    doc.mock = true
+    doc.scale = 1
+    doc.pageWidth = 595
+    doc.pageHeight = 842
+    doc.where = doc.where || { page: 0, x: 72, y: 100, width: 150, height: 36 }
     mock.appendChild(tab)
     host.textContent = ''
     host.appendChild(mock)
@@ -402,13 +487,87 @@ function sizeCanvas() {
 }
 function openPad(doc) {
   pending = doc
-  // A drawing already made is reused with one click, as a saved signature is; the dialog
+  // A signature already made is reused with one click, as a saved signature is; the dialog
   // comes back only when there is none yet, or to sign again.
   if (signature && !placed[doc.n]) { placeOn(doc); return }
   veil.classList.add('open')
-  sizeCanvas()
+  if (!$('sig-name').value) $('sig-name').value = plainName(displayName)
+  renderStyles()
+  showTab(tab)
 }
 function closePad() { veil.classList.remove('open'); pending = null }
+
+// --- typed: the name in a script font, drawn to a PNG like the pad's ---------------------
+const STYLES = [
+  { id: 'vibes', family: 'Sig Vibes', label: 'Style 1' },
+  { id: 'allura', family: 'Sig Allura', label: 'Style 2' },
+  { id: 'dancing', family: 'Sig Dancing', label: 'Style 3' },
+]
+let tab = 'draw'
+let styleId = STYLES[0].id
+
+/** The name without diacritics, the way a Vietnamese name is signed on an English letter. */
+function plainName(name) {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim()
+}
+
+function showTab(which) {
+  tab = which
+  $('tab-draw').classList.toggle('current', tab === 'draw')
+  $('tab-type').classList.toggle('current', tab === 'type')
+  $('tab-draw').setAttribute('aria-selected', String(tab === 'draw'))
+  $('tab-type').setAttribute('aria-selected', String(tab === 'type'))
+  $('pane-draw').hidden = tab !== 'draw'
+  $('pane-type').hidden = tab !== 'type'
+  if (tab === 'draw') sizeCanvas()
+  else $('sig-name').focus()
+}
+$('tab-draw').addEventListener('click', () => showTab('draw'))
+$('tab-type').addEventListener('click', () => showTab('type'))
+
+function renderStyles() {
+  const name = $('sig-name').value.trim() || 'Your name'
+  const host = $('styles')
+  host.textContent = ''
+  for (const s of STYLES) {
+    const button = el('button', { type: 'button', class: 'style' + (s.id === styleId ? ' current' : ''), role: 'radio', 'aria-checked': String(s.id === styleId) }, [
+      el('span', { class: 'sample', text: name }), el('span', { class: 'which', text: s.label }),
+    ])
+    button.querySelector('.sample').style.fontFamily = `'${s.family}', cursive`
+    button.addEventListener('click', () => { styleId = s.id; renderStyles() })
+    host.appendChild(button)
+  }
+}
+$('sig-name').addEventListener('input', renderStyles)
+
+/** The typed name as a PNG data URL, sized to the text, transparent background. */
+async function typedSignature(name, family) {
+  const size = 96
+  const font = `${size}px '${family}', cursive`
+  try { await document.fonts.load(font, name) } catch { /* the fallback font draws instead */ }
+  const c = document.createElement('canvas')
+  const g = c.getContext('2d')
+  g.font = font
+  const m = g.measureText(name)
+  const pad = size * 0.25
+  c.width = Math.ceil(m.width + pad * 2)
+  c.height = Math.ceil(size * 1.5)
+  g.font = font
+  g.fillStyle = '#20394d'
+  g.textBaseline = 'alphabetic'
+  g.fillText(name, pad, size * 1.05)
+  return c.toDataURL('image/png')
+}
+
+/** The image's width / height, so a placed box can be scaled without distorting it. */
+function aspectOf(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1)
+    img.onerror = () => resolve(1)
+    img.src = dataUrl
+  })
+}
 function point(e) {
   const r = pad.getBoundingClientRect()
   return { x: e.clientX - r.left, y: e.clientY - r.top }
@@ -432,16 +591,52 @@ pad.addEventListener('pointercancel', () => { drawing = false })
 $('clear').addEventListener('click', sizeCanvas)
 $('cancel').addEventListener('click', closePad)
 veil.addEventListener('click', (e) => { if (e.target === veil) closePad() })
-$('apply').addEventListener('click', () => {
+$('apply').addEventListener('click', async () => {
   const status = $('status')
-  if (!dirty) { status.textContent = 'Please sign in the box first.'; return }
+  let next
+  if (tab === 'draw') {
+    if (!dirty) { status.textContent = 'Please sign in the box first.'; return }
+    next = trimmedPad()
+    method = 'drawn'
+  } else {
+    const name = $('sig-name').value.trim()
+    if (!name) { status.textContent = 'Please type your name first.'; return }
+    const style = STYLES.find((s) => s.id === styleId) || STYLES[0]
+    next = await typedSignature(name, style.family)
+    method = 'typed'
+  }
   status.textContent = ''
-  signature = pad.toDataURL('image/png')
-  // A new drawing replaces the old one everywhere it was placed: one signature per person.
-  for (const d of docs) if (placed[d.n]) placeOn(d)
+  signature = next
+  signatureAspect = await aspectOf(signature)
+  // A new signature replaces the old one everywhere it was placed, refitted to each spot.
+  for (const d of docs) { d.box = null; if (placed[d.n]) placeOn(d) }
   if (pending) placeOn(pending)
   closePad()
 })
+
+/** The drawing cropped to its ink, with a small margin, so the box fits the signature. */
+function trimmedPad() {
+  const w = pad.width, h = pad.height
+  const data = ctx.getImageData(0, 0, w, h).data
+  let minX = w, minY = h, maxX = -1, maxY = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (data[(y * w + x) * 4 + 3] > 0) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < 0) return pad.toDataURL('image/png')
+  const margin = Math.round(Math.min(w, h) * 0.04)
+  const sx = Math.max(0, minX - margin), sy = Math.max(0, minY - margin)
+  const sw = Math.min(w, maxX + margin + 1) - sx, sh = Math.min(h, maxY + margin + 1) - sy
+  const c = document.createElement('canvas')
+  c.width = sw
+  c.height = sh
+  c.getContext('2d').drawImage(pad, sx, sy, sw, sh, 0, 0, sw, sh)
+  return c.toDataURL('image/png')
+}
 
 // ---- submit ---------------------------------------------------------------------------------
 
@@ -475,8 +670,8 @@ $('form').addEventListener('submit', async (e) => {
   submit.disabled = true
   try {
     const res = await call('POST', '/submit', {
-      values: collect(), signature_png: signature, signature_method: 'drawn',
-      placed: docs.map((d) => d.n), consent: true,
+      values: collect(), signature_png: signature, signature_method: method,
+      placed: docs.map((d) => ({ n: d.n, box: toPdfBox(d) })), consent: true,
     })
     if (res.ok) {
       clearTimeout(timer)
