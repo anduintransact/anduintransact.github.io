@@ -164,7 +164,9 @@ function documentPanel(d) {
   const parts = [head, hint]
   if (d.note) {
     // HR's plain-language note from the document type: what it is and why it is asked for.
-    parts.push(el('details', { class: 'about' }, [el('summary', { text: "What's this document?" }), el('p', { text: d.note })]))
+    // Paragraphs on a blank line; a line break inside a sentence (as pasted) is just a space.
+    const paragraphs = d.note.split(/\n\s*\n/).map((t) => t.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)
+    parts.push(el('details', { class: 'about' }, [el('summary', { text: "What's this document?" }), el('div', { class: 'text' }, paragraphs.map((t) => el('p', { text: t })))]))
   }
   const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [...parts, tools, pages])])
   const doc = { n: d.n, label: d.label, panel, pages, stateLine, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
