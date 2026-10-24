@@ -53,6 +53,12 @@ input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px r
 .doc .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
 .doc .state { font-size: 12px; color: var(--ink-subtle); }
 .doc.signed .state { color: var(--ok); font-weight: 500; }
+.about { margin: -4px 0 12px; font-size: 13px; }
+.about summary { cursor: pointer; color: var(--brand); font-weight: 500; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.about summary::-webkit-details-marker { display: none; }
+.about summary::before { content: '?'; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--brand); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.about[open] summary::before { content: '–'; }
+.about p { margin: 8px 0 0; padding: 10px 12px; background: #f1f9fc; border: 1px solid rgba(16, 117, 220, 0.25); border-radius: 4px; color: var(--ink); white-space: pre-line; }
 .doc .tools { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ink-subtle); padding: 6px 10px; border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 4px 4px 0 0; background: var(--hover); }
 .doc .tools .grow { flex: 1; }
 .doc .tools .link { font-size: 12px; text-decoration: none; }

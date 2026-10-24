@@ -155,7 +155,12 @@ function documentPanel(d) {
   const head = el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])])
   const hint = el('p', { class: 'hint', text: 'Read the document, then click Sign here on it to sign. You can download it to read offline.' })
   hint.style.margin = '-4px 0 12px'
-  const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [head, hint, tools, pages])])
+  const parts = [head, hint]
+  if (d.note) {
+    // HR's plain-language note from the document type: what it is and why it is asked for.
+    parts.push(el('details', { class: 'about' }, [el('summary', { text: "What's this document?" }), el('p', { text: d.note })]))
+  }
+  const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [...parts, tools, pages])])
   const doc = { n: d.n, label: d.label, panel, pages, stateLine, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
   jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
   pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
