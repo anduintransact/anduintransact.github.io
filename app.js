@@ -36,6 +36,9 @@ const el = (tag, attrs, children) => {
 
 const token = location.hash.slice(1)
 const PREVIEW = token === 'preview'
+// A new link pasted into a tab already on this page changes only the fragment, which does not
+// reload the page: start over with the new token instead of keeping the old one.
+window.addEventListener('hashchange', () => location.reload())
 const store = {
   get() { try { return sessionStorage.getItem('s:' + token) } catch { return null } },
   set(v) { try { sessionStorage.setItem('s:' + token, v) } catch { /* private mode: ask again next time */ } },
