@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<!--
+  Everything the page runs comes from this origin, and the only place it may call is the
+  onboarding project's API named in api-base. PDF.js is vendored under vendor/ so no
+  third-party host serves script to a page people sign on. (frame-ancestors cannot be set
+  from a meta tag; the page is framed on purpose by HiveFin's invite dialog for its preview.
+  That frame must not be sandboxed without allow-same-origin: an opaque origin makes 'self'
+  match nothing and the script is refused.)
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self' blob:; img-src data: blob:; connect-src https://xecrgruemilgdimrbgec.supabase.co; base-uri 'none'; form-action 'none'">
+<meta name="api-base" content="https://xecrgruemilgdimrbgec.supabase.co/functions/v1/form">
+<title>New hire onboarding — Anduin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="bar"><span class="mark">Anduin<span>.</span></span><span class="crumb">New hire onboarding</span></div></header>
+<main>
+  <div id="banner" class="banner" hidden>Preview — this is the page the candidate sees after entering the right e-mail.</div>
+
+  <section id="loading"><p class="hint" style="margin:0">Opening your link…</p></section>
+
+  <section id="message" hidden>
+    <h1 id="message-title"></h1>
+    <p id="message-text"></p>
+  </section>
+
+  <div id="gate" hidden>
+    <h1>New hire onboarding</h1>
+    <p class="lead">This link was sent to one e-mail address. Enter that address to continue.</p>
+    <form id="gate-form" novalidate>
+      <section>
+        <div class="field">
+          <label for="email">E-mail the link was sent to</label>
+          <input id="email" type="email" autocomplete="email" inputmode="email" required>
+        </div>
+        <button type="submit" id="go" class="submit">Continue</button>
+        <p id="gate-status" class="status" role="alert"></p>
+      </section>
+    </form>
+  </div>
+
+  <div id="form-wrap" hidden>
+    <h1>New hire onboarding</h1>
+    <p class="lead" id="greeting"></p>
+    <form id="form" novalidate>
+      <div id="sections"></div>
+      <section id="docs" hidden>
+        <h2>Documents to sign</h2>
+        <p class="hint" style="margin:-6px 0 14px" id="docs-hint"></p>
+        <div id="doc-list"></div>
+      </section>
+      <section>
+        <label class="check"><input type="checkbox" id="consent"><span id="consent-text"></span></label>
+      </section>
+      <button type="submit" id="submit" class="submit">Sign and submit</button>
+      <p id="status" class="status" role="alert"></p>
+    </form>
+    <section id="done" hidden>
+      <h2 class="ok">We have received your form</h2>
+      <p>Thank you. HR will review it and contact you if anything is missing. You can close this page.</p>
+    </section>
+  </div>
+</main>
+
+<div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veil-title">
+  <div class="dialog">
+    <h2 id="veil-title">Your signature</h2>
+    <p class="lead">Sign with your finger or mouse in the box. It will be placed where you clicked.</p>
+    <canvas id="sig" class="pad"></canvas>
+    <div class="row" style="margin:8px 0 0"><span class="hint">Nothing is sent until you submit the form.</span><button type="button" id="clear" class="link">Clear</button></div>
+    <div class="actions"><button type="button" id="cancel" class="ghost">Cancel</button><button type="button" id="apply" class="primary">Place signature</button></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
