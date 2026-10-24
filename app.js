@@ -124,7 +124,7 @@ $('gate-form').addEventListener('submit', async (e) => {
 // ---- the form ------------------------------------------------------------------------------
 
 let inputs = []
-let docs = []          // [{ n, block, spot, where, pdf }]
+let docs = []          // [{ n, block, pages, stateLine, where, spot, pdf, loaded }]
 let signature = null   // one drawing per person, placed per document
 const placed = {}
 
@@ -171,17 +171,24 @@ function renderForm(state) {
     const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
     const block = el('div', { class: 'doc' }, [el('div', { class: 'head' }, [el('div', {}, [el('h3', { text: d.label }), stateLine])]), pages])
     list.appendChild(block)
-    const doc = { n: d.n, block, pages, stateLine, where: d.signature, spot: null, pdf: d.pdf || null }
-    docs.push(doc)
-    renderDoc(doc)
+    docs.push({ n: d.n, block, pages, stateLine, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null })
   }
 
   $('consent-text').textContent = state.consent_text
   $('consent').checked = false
   $('submit').disabled = PREVIEW
   $('banner').hidden = !PREVIEW
+  // Shown first: a document is drawn to the width its block has, which is nothing while hidden.
   show('form-wrap')
+  docs.forEach(renderDoc)
 }
+
+// A narrower or wider window redraws the documents at the new width; the signature stays placed.
+let resizeTimer = null
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => docs.forEach((d) => { if (d.loaded) drawPages(d) }), 200)
+})
 
 // Draft: saved a moment after typing stops, so closing the tab loses nothing.
 let timer = null
@@ -222,6 +229,39 @@ function spotTab(doc, where, base, scale) {
   return tab
 }
 
+/** The width a page is drawn at: the block's inner width, so the paper reads at full size. */
+function pageWidth(host) {
+  const style = getComputedStyle(host)
+  return Math.max(280, host.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
+}
+
+async function drawPages(doc) {
+  const host = doc.pages
+  const pdf = doc.loaded
+  const width = pageWidth(host)
+  if (doc.drawnAt === width) return
+  doc.drawnAt = width
+  host.textContent = ''
+  doc.spot = null
+  for (let num = 1; num <= pdf.numPages; num++) {
+    const page = await pdf.getPage(num)
+    const base = page.getViewport({ scale: 1 })
+    const scale = width / base.width
+    const ratio = window.devicePixelRatio || 1
+    const viewport = page.getViewport({ scale: scale * ratio })
+    const canvas = el('canvas')
+    canvas.width = Math.floor(viewport.width)
+    canvas.height = Math.floor(viewport.height)
+    canvas.style.width = width + 'px'
+    canvas.style.height = Math.floor(viewport.height / ratio) + 'px'
+    const wrap = el('div', { class: 'page' }, [canvas])
+    wrap.style.width = width + 'px'
+    host.appendChild(wrap)
+    if (doc.where && doc.where.page === num - 1) wrap.appendChild(spotTab(doc, doc.where, base, scale))
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+  }
+}
+
 function renderDoc(doc) {
   const host = doc.pages
   if (PREVIEW && !doc.pdf) {
@@ -236,31 +276,11 @@ function renderDoc(doc) {
     host.appendChild(mock)
     return
   }
-  const width = Math.max(280, host.clientWidth - 24)
   const source = doc.pdf
     ? { data: doc.pdf }
     : { url: API + '/doc/' + doc.n, httpHeaders: headers(false), withCredentials: false, disableRange: true, disableStream: true }
   pdfjs.getDocument(source).promise
-    .then(async (pdf) => {
-      host.textContent = ''
-      for (let num = 1; num <= pdf.numPages; num++) {
-        const page = await pdf.getPage(num)
-        const base = page.getViewport({ scale: 1 })
-        const scale = width / base.width
-        const ratio = window.devicePixelRatio || 1
-        const viewport = page.getViewport({ scale: scale * ratio })
-        const canvas = el('canvas')
-        canvas.width = Math.floor(viewport.width)
-        canvas.height = Math.floor(viewport.height)
-        canvas.style.width = width + 'px'
-        canvas.style.height = Math.floor(viewport.height / ratio) + 'px'
-        const wrap = el('div', { class: 'page' }, [canvas])
-        wrap.style.width = width + 'px'
-        host.appendChild(wrap)
-        if (doc.where && doc.where.page === num - 1) wrap.appendChild(spotTab(doc, doc.where, base, scale))
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-      }
-    })
+    .then((pdf) => { doc.loaded = pdf; return drawPages(doc) })
     .catch(() => {
       host.textContent = ''
       host.appendChild(el('div', { class: 'loading', text: 'The document could not be shown. Please reload the page, or contact HR if it keeps failing.' }))
