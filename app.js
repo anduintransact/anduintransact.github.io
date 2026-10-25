@@ -371,7 +371,8 @@ function updateSide() {
     $('sig-preview').src = signature
     $('signed-on').textContent = 'Signed ' + dayOf(signedAt[doc.n] || new Date())
   }
-  $('next').disabled = !done
+  // HR's preview walks every step without signing; the candidate must sign first.
+  $('next').disabled = !done && !PREVIEW
 }
 
 /** The top bar's "Step N of M" and its segments: done, current, upcoming. */
