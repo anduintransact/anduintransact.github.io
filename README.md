@@ -11,8 +11,8 @@ e-mail matched, from the onboarding API, and goes back there on submit.
 | File | What it is |
 |------|------------|
 | `index.html` | The page: a content-security policy that allows nothing but this origin and the API, and the mount points the script fills. |
-| `app.js` | The gate, the form, the documents drawn with PDF.js, the "Sign here" tab, the signature dialog, the submit. |
-| `style.css` | HiveFin's light theme, written out. |
+| `app.js` | The gate (with the sign-in page's aurora), the steps, the documents drawn with PDF.js, the "Sign here" tag, the signature dialog, the submit, the done screen. |
+| `style.css` | The design handoff "onboarding portal (2a)": Anduin tokens, top bar with step progress, document canvas and action panel. |
 | `vendor/pdfjs/` | PDF.js 4.10.38 (`pdf.min.mjs` → `pdf.js`, `pdf.worker.min.mjs` → `pdf.worker.js`) from cdnjs, unmodified. SHA-256: `27fc2a05…190a9c` and `1baa1844…4be36`. |
 | `assets/anduin-logo.png` | The Anduin logo in the header, a copy of `hivefin-app/public/anduin-padded-logo.png`. |
 | `vendor/fonts/` | Qwigley, Kristi, Caveat, Zeyada (SIL Open Font License, `OFL.txt`) and Homemade Apple (Apache 2.0, `LICENSE-HomemadeApple.txt`): the styles offered for a typed signature. |

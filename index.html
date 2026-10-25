@@ -19,58 +19,122 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div class="bar"><img class="logo" src="assets/anduin-logo.png" alt="Anduin" width="156" height="40"></div></header>
-<main>
+<!-- Icons drawn once here and cloned by the script where it needs them (Lucide, 24 viewBox). -->
+<svg hidden aria-hidden="true">
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- Top bar: on every screen but the e-mail gate. The middle shows the step progress. -->
+  <header class="topbar" id="topbar" hidden>
+    <img class="logo" src="assets/anduin-logo.png" alt="Anduin" width="86" height="22">
+    <div class="progress" id="progress" hidden>
+      <span class="step-text" id="step-text"></span>
+      <ol class="segs" id="steps" aria-label="Steps"></ol>
+    </div>
+    <div class="who" id="who" hidden><span class="who-name" id="who-name"></span><span class="avatar" id="who-avatar" aria-hidden="true"></span></div>
+  </header>
+
   <div id="banner" class="banner" hidden>Preview — this is the page the candidate sees after entering the right e-mail.</div>
 
-  <section id="loading"><p class="hint" style="margin:0">Opening your link…</p></section>
+  <section id="loading" class="center"><p class="muted">Opening your link…</p></section>
 
-  <section id="message" hidden>
-    <h1 id="message-title"></h1>
-    <p id="message-text"></p>
+  <section id="message" class="center" hidden>
+    <div class="card note">
+      <h1 id="message-title"></h1>
+      <p id="message-text"></p>
+    </div>
   </section>
 
-  <div id="gate" hidden>
-    <h1>Confirm your e-mail</h1>
-    <p class="lead">To keep your documents private, enter the e-mail address this link was sent to.</p>
-    <form id="gate-form" novalidate>
-      <section>
-        <div class="field">
-          <label for="email">Your e-mail</label>
-          <input id="email" type="email" autocomplete="email" inputmode="email" required>
+  <!-- The e-mail gate, in the look of HiveFin's sign-in page. -->
+  <div id="gate" class="gate" hidden>
+    <canvas id="aurora" class="aurora" aria-hidden="true"></canvas>
+    <div class="gate-col">
+      <div class="gate-frame" aria-hidden="true"></div>
+      <div class="gate-head">
+        <div class="gate-logo" aria-hidden="true">
+          <img src="assets/anduin-logo.png" alt="" class="mark">
+          <img src="assets/anduin-logo.png" alt="" class="word">
         </div>
-        <button type="submit" id="go" class="submit">Continue</button>
-        <p id="gate-status" class="status" role="alert"></p>
-      </section>
-    </form>
+        <h1>Confirm your e-mail</h1>
+        <p>To keep your documents private, enter the e-mail address this link was sent to.</p>
+        <div class="badge-row"><span class="badge"><svg class="ic" width="14" height="14"><use href="#i-shield"/></svg>Protected Session</span></div>
+      </div>
+      <form id="gate-form" class="gate-form" novalidate>
+        <label for="email">Your e-mail</label>
+        <input id="email" type="email" placeholder="name@example.com" autocomplete="email" inputmode="email" required>
+        <p id="gate-status" class="gate-err" role="alert"></p>
+        <button type="submit" id="go" class="gate-btn">Continue<svg class="ic" width="16" height="16"><use href="#i-right"/></svg></button>
+      </form>
+      <p class="gate-foot">Can't open your documents? Contact your <b>HR team</b>.</p>
+    </div>
   </div>
 
-  <div id="form-wrap" hidden>
-    <h1 id="welcome">Welcome to Anduin</h1>
-    <p class="lead" id="greeting"></p>
-    <ol id="steps" class="steps" aria-label="Steps"></ol>
-    <form id="form" novalidate>
-      <div id="panels"></div>
-      <div class="panel" id="panel-form" hidden>
-        <div id="sections"></div>
-        <section>
-          <label class="check"><input type="checkbox" id="consent"><span id="consent-text"></span></label>
-        </section>
+  <!-- The steps: the document canvas on the left, the action panel on the right. -->
+  <div id="form-wrap" class="stage" hidden>
+    <form id="form" class="stage-form" novalidate>
+      <div class="canvas" id="canvas">
+        <div id="panels"></div>
+        <div class="panel" id="panel-form" hidden>
+          <div id="sections"></div>
+        </div>
       </div>
-      <div class="nav">
-        <button type="button" id="back" class="ghost" hidden>Back</button>
-        <span class="grow"></span>
-        <button type="button" id="next" class="primary" hidden>Next</button>
-        <button type="submit" id="submit" class="submit" hidden>Sign and submit</button>
-      </div>
-      <p id="status" class="status" role="alert"></p>
+      <aside class="side">
+        <div class="side-body">
+          <div class="eyebrow" id="side-step"></div>
+          <div class="side-title" id="side-title"></div>
+
+          <div id="side-doc" hidden>
+            <div class="pill-row"><span class="pill" id="pill"><span class="dot"></span><span id="pill-text">Not signed yet</span></span></div>
+            <p class="help">Read the document, then click Sign here on it to sign. You can download it to read offline.</p>
+            <!-- Filled per document by the script: "What's this document?" and "Download PDF". -->
+            <div class="links"></div>
+            <div class="sig-sec">
+              <div class="label">Your signature</div>
+              <div class="sig-unsigned" id="sig-unsigned">
+                <div class="muted">Not signed yet. Your signature goes where the document says Sign here.</div>
+                <button type="button" id="jump" class="btn2"><svg class="ic" width="14" height="14"><use href="#i-down"/></svg>Go to signature</button>
+              </div>
+              <div class="sig-signed" id="sig-signed" hidden>
+                <img id="sig-preview" alt="Your signature">
+                <div class="signed-on"><svg class="ic" width="12" height="12"><use href="#i-check"/></svg><span id="signed-on"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="side-form" hidden>
+            <div class="checklist" id="checklist"></div>
+            <label class="consent" id="consent-row"><input type="checkbox" id="consent"><span id="consent-text"></span></label>
+          </div>
+
+          <p id="status" class="status" role="alert"></p>
+        </div>
+        <div class="side-foot">
+          <button type="button" id="back" class="btn2" hidden><svg class="ic" width="15" height="15"><use href="#i-left"/></svg>Back</button>
+          <button type="button" id="next" class="btn1" hidden>Continue</button>
+          <button type="submit" id="submit" class="btn1" hidden>Sign and submit</button>
+        </div>
+      </aside>
     </form>
-    <section id="done" hidden>
-      <h2 class="ok">We have received your form</h2>
-      <p>Thank you. HR will review it and contact you if anything is missing. You can close this page.</p>
+
+    <section id="done" class="finish" hidden>
+      <div class="done-col">
+        <div class="done-check"><svg class="ic" width="24" height="24"><use href="#i-check"/></svg></div>
+        <h1 id="done-title"></h1>
+        <p id="done-text"></p>
+        <div class="done-grid" id="done-grid"></div>
+      </div>
     </section>
   </div>
-</main>
+</div>
 
 <div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veil-title">
   <div class="dialog">
@@ -82,14 +146,14 @@
     <div id="pane-draw">
       <p class="lead">Sign with your finger or mouse in the box. It will be placed where you clicked, and you can resize it there.</p>
       <canvas id="sig" class="pad"></canvas>
-      <div class="row" style="margin:8px 0 0"><span class="hint">Nothing is sent until you submit the form.</span><button type="button" id="clear" class="link">Clear</button></div>
+      <div class="pad-row"><span class="muted small">Nothing is sent until you submit the form.</span><button type="button" id="clear" class="linkb">Clear</button></div>
     </div>
     <div id="pane-type" hidden>
       <p class="lead">Type your name and pick a style. It will be placed where you clicked, and you can resize it there.</p>
       <div class="field"><label for="sig-name">Your name</label><input id="sig-name" type="text" maxlength="80" autocomplete="off"></div>
       <div id="styles" class="styles" role="radiogroup" aria-label="Signature style"></div>
     </div>
-    <div class="actions"><button type="button" id="cancel" class="ghost">Cancel</button><button type="button" id="apply" class="primary">Place signature</button></div>
+    <div class="actions"><span id="pad-status" class="status" role="alert"></span><button type="button" id="cancel" class="btn2">Cancel</button><button type="button" id="apply" class="btn1">Place signature</button></div>
   </div>
 </div>
 

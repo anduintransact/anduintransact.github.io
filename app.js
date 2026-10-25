@@ -4,6 +4,10 @@
  * header. The page draws itself from what `GET /state` answers: the e-mail gate first, then
  * one step per document to read and sign, and a last step with the questions to answer.
  *
+ * The layout is the design handoff "onboarding portal (2a)": a top bar with the step
+ * progress, the document on a grey canvas to the left, and an action panel to the right
+ * that names the step, shows whether it is signed, and carries Back / Continue.
+ *
  * Plain browser JavaScript, one module, no build step: the file is served as written. PDF.js
  * (vendored under vendor/pdfjs) draws each document so the person signs on the paper
  * itself, the way an e-signing tool shows a signing field — a browser's own PDF viewer
@@ -30,6 +34,17 @@ const el = (tag, attrs, children) => {
   }
   for (const c of children || []) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c)
   return node
+}
+/** One of the icons drawn once in index.html, at the given size. */
+const icon = (name, size) => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('class', 'ic')
+  svg.setAttribute('width', String(size))
+  svg.setAttribute('height', String(size))
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+  use.setAttribute('href', '#i-' + name)
+  svg.appendChild(use)
+  return svg
 }
 
 // ---- session: kept for this tab only, so a reload within two hours needs no second unlock --
@@ -63,10 +78,15 @@ async function call(method, path, body) {
   return { ok: res.ok, status: res.status, data }
 }
 
-// ---- the three screens ----------------------------------------------------------------------
+// ---- the screens ----------------------------------------------------------------------------
 
+let stopAurora = null
+
+/** Shows one screen. The top bar is on every screen but the gate; the aurora runs only there. */
 function show(id) {
   for (const s of ['loading', 'message', 'gate', 'form-wrap']) $(s).hidden = s !== id
+  $('topbar').hidden = id === 'gate'
+  if (id !== 'gate' && stopAurora) { stopAurora(); stopAurora = null }
 }
 
 function message(title, text) {
@@ -95,23 +115,33 @@ async function load() {
 function renderGate() {
   store.clear()
   show('gate')
+  if (!stopAurora) stopAurora = startAurora($('aurora'))
   $('email').focus()
 }
 
 $('gate-form').addEventListener('submit', async (e) => {
   e.preventDefault()
+  const form = $('gate-form')
   const status = $('gate-status')
   const button = $('go')
+  const email = $('email').value.trim()
   status.textContent = ''
+  form.classList.remove('bad')
+  if (!/\S+@\S+\.\S+/.test(email)) {
+    form.classList.add('bad')
+    status.textContent = 'Enter the e-mail address this link was sent to.'
+    return
+  }
   button.disabled = true
   try {
-    const res = await call('POST', '/unlock', { email: $('email').value })
+    const res = await call('POST', '/unlock', { email })
     if (res.ok && res.data && res.data.session) {
       store.set(res.data.session)
       show('loading')
       await load()
       return
     }
+    form.classList.add('bad')
     if (res.status === 403) status.textContent = 'That e-mail does not match the address this link was sent to.'
     else if (res.status === 423) status.textContent = 'This link has been locked after too many wrong attempts. Please contact HR.'
     else if (res.status === 429) status.textContent = 'Too many attempts. Please wait a few minutes.'
@@ -124,54 +154,88 @@ $('gate-form').addEventListener('submit', async (e) => {
   }
 })
 
+/**
+ * HiveFin's sign-in AuroraBackground shader (components/auth/AuroraBackground.tsx), sized to
+ * the gate. Returns the function that stops it. Skipped, leaving the CSS gradients, when the
+ * person asked for reduced motion or WebGL is not there.
+ */
+function startAurora(canvas) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+  if (!gl) return null
+  const vs = 'attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}'
+  const fs = `precision mediump float;uniform float iTime;uniform vec2 iResolution;
+#define NUM_OCTAVES 3
+float rand(vec2 n){return fract(sin(dot(n,vec2(12.9898,4.1414)))*43758.5453);}
+float noise(vec2 p){vec2 ip=floor(p);vec2 u=fract(p);u=u*u*(3.0-2.0*u);float res=mix(mix(rand(ip),rand(ip+vec2(1.0,0.0)),u.x),mix(rand(ip+vec2(0.0,1.0)),rand(ip+vec2(1.0,1.0)),u.x),u.y);return res*res;}
+float fbm(vec2 x){float v=0.0;float a=0.3;vec2 shift=vec2(100.0);mat2 rot=mat2(cos(0.5),sin(0.5),-sin(0.5),cos(0.50));for(int i=0;i<NUM_OCTAVES;++i){v+=a*noise(x);x=rot*x*2.0+shift;a*=0.4;}return v;}
+vec4 tanh4(vec4 x){vec4 e=exp(2.0*x);return (e-1.0)/(e+1.0);}
+void main(){vec2 shake=vec2(sin(iTime*1.2)*0.005,cos(iTime*2.1)*0.005);
+vec2 p=((gl_FragCoord.xy+shake*iResolution.xy)-iResolution.xy*0.5)/iResolution.y*mat2(6.0,-4.0,4.0,6.0);
+vec2 v;vec4 o=vec4(0.0);float f=2.0+fbm(p+vec2(iTime*5.0,0.0))*0.5;
+for(float i=0.0;i<35.0;i++){v=p+cos(i*i+(iTime+p.x*0.08)*0.025+i*vec2(13.0,11.0))*3.5+vec2(sin(iTime*3.0+i)*0.003,cos(iTime*3.5-i)*0.003);
+float tailNoise=fbm(v+vec2(iTime*0.5,i))*0.3*(1.0-(i/35.0));
+vec4 auroraColors=vec4(0.1+0.3*sin(i*0.2+iTime*0.4),0.3+0.5*cos(i*0.3+iTime*0.5),0.7+0.3*sin(i*0.4+iTime*0.3),1.0);
+vec4 c=auroraColors*exp(sin(i*i+iTime*0.8))/length(max(v,vec2(v.x*f*0.015,v.y*1.5)));
+float thin=smoothstep(0.0,1.0,i/35.0)*0.6;o+=c*(1.0+tailNoise*0.8)*thin;}
+o=tanh4(pow(o/100.0,vec4(1.6)));gl_FragColor=o*1.5;}`
+  const compile = (src, type) => {
+    const s = gl.createShader(type)
+    gl.shaderSource(s, src)
+    gl.compileShader(s)
+    return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null
+  }
+  const v = compile(vs, gl.VERTEX_SHADER), f = compile(fs, gl.FRAGMENT_SHADER)
+  if (!v || !f) return null
+  const prog = gl.createProgram()
+  gl.attachShader(prog, v)
+  gl.attachShader(prog, f)
+  gl.linkProgram(prog)
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null
+  gl.useProgram(prog)
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW)
+  const pos = gl.getAttribLocation(prog, 'position')
+  gl.enableVertexAttribArray(pos)
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0)
+  const tLoc = gl.getUniformLocation(prog, 'iTime'), rLoc = gl.getUniformLocation(prog, 'iResolution')
+  const size = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    canvas.width = Math.max(1, canvas.clientWidth * dpr)
+    canvas.height = Math.max(1, canvas.clientHeight * dpr)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+  }
+  size()
+  const ro = window.ResizeObserver ? new ResizeObserver(size) : null
+  if (ro) ro.observe(canvas)
+  const t0 = Date.now()
+  let raf = 0
+  const loop = () => {
+    gl.uniform1f(tLoc, (Date.now() - t0) * 0.001)
+    gl.uniform2f(rLoc, canvas.width, canvas.height)
+    gl.clearColor(0.043, 0.067, 0.125, 1.0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    raf = requestAnimationFrame(loop)
+  }
+  loop()
+  return () => { cancelAnimationFrame(raf); if (ro) ro.disconnect() }
+}
+
 // ---- the form: one step per document, then the questions -------------------------------------
 
 let inputs = []
-let docs = []          // [{ n, label, panel, pages, counter, jump, download, where, spot, pdf, loaded, drawnAt }]
+let docs = []          // [{ n, label, note, panel, pages, where, spot, pdf, loaded, drawnAt, href }]
 let steps = []         // [{ kind: 'doc', doc } | { kind: 'form' }]
 let current = 0
 let signature = null   // one signature image per person (drawn or typed), placed per document
 let method = 'drawn'   // how `signature` was made: 'drawn' | 'typed'
 let signatureAspect = 1 // width / height of the image, so a resized box keeps its shape
 const placed = {}      // n → true once the person put the signature on that document
+const signedAt = {}    // n → the moment it was first placed, shown as "Signed October 25, 2026"
 let displayName = ''
-
-function fieldBlock(f, draft) {
-  const label = el('label', { for: f.key, text: f.label })
-  if (f.optional) label.appendChild(el('span', { class: 'hint inline', text: ' (optional)' }))
-  const input = el('input', {
-    id: f.key, name: f.key, 'data-key': f.key, type: f.type, maxlength: String(f.max_length),
-    autocomplete: f.autocomplete, inputmode: f.type === 'tel' ? 'tel' : null, required: !f.optional,
-  })
-  input.value = draft[f.key] || ''
-  const block = el('div', { class: 'field', 'data-field': f.key }, [label, input])
-  if (f.hint) block.appendChild(el('small', { class: 'hint', text: f.hint }))
-  block.appendChild(el('div', { class: 'err' }))
-  return block
-}
-
-/** A document's step: HR's note if any, a toolbar, and the pages drawn by PDF.js. */
-function documentPanel(d) {
-  const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
-  const counter = el('span', { class: 'counter' })
-  const jump = el('button', { type: 'button', class: 'link', text: 'Go to signature', hidden: true })
-  const download = el('a', { class: 'link', text: 'Download PDF ↓', download: `${d.label}.pdf`, hidden: true })
-  const tools = el('div', { class: 'tools' }, [counter, el('span', { class: 'grow' }), jump, download])
-  // No title or instruction above the paper: the step list names the document, and the
-  // "Sign here" tab on the page says what to do.
-  const parts = []
-  if (d.note) {
-    // HR's plain-language note from the document type: what it is and why it is asked for.
-    // Paragraphs on a blank line; a line break inside a sentence (as pasted) is just a space.
-    const paragraphs = d.note.split(/\n\s*\n/).map((t) => t.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)
-    parts.push(el('details', { class: 'about' }, [el('summary', { text: "What's this document?" }), el('div', { class: 'text' }, paragraphs.map((t) => el('p', { text: t })))]))
-  }
-  const panel = el('div', { class: 'panel', hidden: true }, [el('section', { class: 'doc' }, [...parts, tools, pages])])
-  const doc = { n: d.n, label: d.label, panel, pages, counter, jump, download, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null }
-  jump.addEventListener('click', () => { if (doc.spot) doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
-  pages.addEventListener('scroll', () => updateCounter(doc), { passive: true })
-  return doc
-}
+let startDate = null
+let submitted = false
 
 /** "1 October 2026" from an ISO date; the date as given when it does not parse. */
 function longDate(iso) {
@@ -179,27 +243,50 @@ function longDate(iso) {
   if (!m) return iso
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
+/** "October 25, 2026": the day something was signed or sent, in the person's own time zone. */
+function dayOf(date) {
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function fieldBlock(f, draft) {
+  const label = el('label', { for: f.key, text: f.label })
+  if (f.optional) label.appendChild(el('span', { class: 'opt', text: ' (optional)' }))
+  const input = el('input', {
+    id: f.key, name: f.key, 'data-key': f.key, type: f.type, maxlength: String(f.max_length),
+    autocomplete: f.autocomplete, inputmode: f.type === 'tel' ? 'tel' : null, required: !f.optional,
+  })
+  input.value = draft[f.key] || ''
+  // Long answers get the row to themselves; short ones share a row.
+  const wide = f.max_length > 60 || f.type === 'email'
+  const block = el('div', { class: 'field' + (wide ? ' wide' : ''), 'data-field': f.key }, [label, input])
+  if (f.hint) block.appendChild(el('small', { class: 'hint', text: f.hint }))
+  block.appendChild(el('div', { class: 'err' }))
+  return block
+}
+
+/** A document's step: its pages drawn by PDF.js on the canvas. The panel describes it. */
+function documentPanel(d) {
+  const pages = el('div', { class: 'pages' }, [el('div', { class: 'loading', text: 'Loading the document…' })])
+  const panel = el('div', { class: 'panel', hidden: true }, [pages])
+  return { n: d.n, label: d.label, note: d.note || null, panel, pages, where: d.signature, spot: null, pdf: d.pdf || null, loaded: null, drawnAt: null, href: null }
+}
 
 function renderForm(state) {
   displayName = state.display_name || ''
-  $('welcome').textContent = displayName ? `Welcome to Anduin, ${displayName}!` : 'Welcome to Anduin!'
-  const greeting = $('greeting')
-  greeting.textContent = ''
-  greeting.append("We're glad you're joining us")
-  if (state.start_date) greeting.append(' on ', el('strong', { text: longDate(state.start_date) }))
-  greeting.append(state.documents.length > 0
-    ? ". Here's what we need before your first day: read and sign the documents below, then fill in your details. It usually takes about 15 minutes."
-    : ". Here's what we need before your first day: fill in your details below. It only takes a few minutes.")
+  startDate = state.start_date || null
+  $('who-name').textContent = displayName
+  $('who-avatar').textContent = (displayName.trim()[0] || '?').toUpperCase()
+  $('who').hidden = false
 
   const sections = $('sections')
   sections.textContent = ''
   for (const step of state.steps) {
     const fields = state.fields.filter((f) => f.step === step.id)
     if (fields.length === 0) continue
-    sections.appendChild(el('section', {}, [el('h2', { text: step.label }), ...fields.map((f) => fieldBlock(f, state.draft || {}))]))
+    sections.appendChild(el('section', {}, [el('h2', { text: step.label }), el('div', { class: 'grid' }, fields.map((f) => fieldBlock(f, state.draft || {})))]))
   }
   inputs = Array.from(sections.querySelectorAll('input[data-key]'))
-  inputs.forEach((i) => i.addEventListener('input', saveDraftSoon))
+  inputs.forEach((i) => i.addEventListener('input', () => { saveDraftSoon(); updateSubmit() }))
   $('consent-text').textContent = state.consent_text
   $('consent').checked = false
 
@@ -211,48 +298,105 @@ function renderForm(state) {
 
   const list = $('steps')
   list.textContent = ''
-  list.hidden = steps.length === 1
-  steps.forEach((s, i) => {
-    const name = s.kind === 'doc' ? s.doc.label : 'Your details'
-    const button = el('button', { type: 'button' }, [el('span', { class: 'num', text: String(i + 1) }), el('span', { class: 'name', text: name })])
-    button.addEventListener('click', () => go(i))
-    list.appendChild(el('li', {}, [button]))
-  })
+  steps.forEach(() => list.appendChild(el('li')))
+  $('progress').hidden = false
 
   $('banner').hidden = !PREVIEW
-  $('submit').disabled = PREVIEW
   show('form-wrap')
   go(0)
 }
 
-/** Shows step `i`: one panel at a time, the stepper and the buttons following it. */
+/** Shows step `i`: one panel on the canvas, the side panel and the buttons following it. */
 function go(i) {
   current = Math.max(0, Math.min(steps.length - 1, i))
   steps.forEach((s, k) => {
     const panel = s.kind === 'doc' ? s.doc.panel : $('panel-form')
     panel.hidden = k !== current
   })
-  Array.from($('steps').children).forEach((li, k) => {
-    const s = steps[k]
-    li.classList.toggle('current', k === current)
-    li.classList.toggle('done', s.kind === 'doc' && !!placed[s.doc.n])
-    li.querySelector('.num').textContent = s.kind === 'doc' && placed[s.doc.n] ? '✓' : String(k + 1)
-  })
+  $('status').textContent = ''
   $('back').hidden = current === 0
   $('next').hidden = current === steps.length - 1
   $('submit').hidden = current !== steps.length - 1
-  $('status').textContent = ''
+  updateSide()
+  updateProgress()
   const step = steps[current]
   if (step.kind === 'doc') {
     // Drawn once the panel is visible: a hidden block has no width to draw to.
     if (step.doc.loaded) drawPages(step.doc)
     else if (!step.doc.started) { step.doc.started = true; renderDoc(step.doc) }
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  $('canvas').scrollTop = 0
+  window.scrollTo({ top: 0 })
 }
 
+/** The side panel for the current step: name, state, links, the signature box or checklist. */
+function updateSide() {
+  const step = steps[current]
+  if (!step) return
+  $('side-step').textContent = `Step ${current + 1} of ${steps.length}`
+  $('side-doc').hidden = step.kind !== 'doc'
+  $('side-form').hidden = step.kind !== 'form'
+  if (step.kind === 'form') {
+    $('side-title').textContent = 'Your details'
+    const list = $('checklist')
+    list.textContent = ''
+    docs.forEach((d, k) => {
+      const done = !!placed[d.n]
+      const circle = el('span', { class: 'circle' + (done ? ' done' : '') })
+      if (done) circle.appendChild(icon('check', 12)); else circle.textContent = String(k + 1)
+      list.appendChild(el('div', { class: 'row' }, [circle, el('span', { class: 'name', text: d.label }), el('span', { class: 'state', text: done ? 'Signed' : 'Not signed yet' })]))
+    })
+    list.hidden = docs.length === 0
+    updateSubmit()
+    return
+  }
+  const doc = step.doc
+  const done = !!placed[doc.n]
+  $('side-title').textContent = doc.label
+  $('pill').classList.toggle('signed', done)
+  $('pill-text').textContent = done ? 'Signed' : 'Not signed yet'
+  // The links: HR's note about the document, if there is one, and the file to read offline.
+  const links = $('side-doc').querySelector('.links')
+  links.textContent = ''
+  if (doc.note) {
+    const about = el('div', { class: 'about', hidden: true }, doc.note.split(/\n\s*\n/).map((t) => t.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean).map((t) => el('p', { text: t })))
+    const toggle = el('button', { type: 'button', class: 'linkb', 'aria-expanded': 'false' }, [icon('help', 15), "What's this document?"])
+    toggle.addEventListener('click', () => { about.hidden = !about.hidden; toggle.setAttribute('aria-expanded', String(!about.hidden)) })
+    links.append(toggle, about)
+  }
+  if (doc.href) links.appendChild(el('a', { class: 'linkb', href: doc.href, download: `${doc.label}.pdf` }, [icon('download', 15), 'Download PDF']))
+  $('sig-unsigned').hidden = done
+  $('sig-signed').hidden = !done
+  if (done) {
+    $('sig-preview').src = signature
+    $('signed-on').textContent = 'Signed ' + dayOf(signedAt[doc.n] || new Date())
+  }
+  $('next').disabled = !done
+}
+
+/** The top bar's "Step N of M" and its segments: done, current, upcoming. */
+function updateProgress() {
+  $('step-text').textContent = `Step ${current + 1} of ${steps.length}`
+  Array.from($('steps').children).forEach((li, k) => {
+    const s = steps[k]
+    const done = s.kind === 'doc' ? !!placed[s.doc.n] : submitted
+    li.className = done ? 'done' : k === current ? 'current' : ''
+  })
+}
+
+/** "Sign and submit" waits for every required answer and the consent, as the design asks. */
+function updateSubmit() {
+  const filled = inputs.every((i) => !i.required || i.value.trim() !== '')
+  $('submit').disabled = PREVIEW || !filled || !$('consent').checked
+}
+$('consent').addEventListener('change', updateSubmit)
+
 $('back').addEventListener('click', () => go(current - 1))
-$('next').addEventListener('click', () => go(current + 1))
+$('next').addEventListener('click', () => { if (!$('next').disabled) go(current + 1) })
+$('jump').addEventListener('click', () => {
+  const step = steps[current]
+  if (step && step.kind === 'doc' && step.doc.spot) step.doc.spot.scrollIntoView({ behavior: 'smooth', block: 'center' })
+})
 
 // A narrower or wider window redraws the visible document at the new width.
 let resizeTimer = null
@@ -300,9 +444,10 @@ function placeOn(doc) {
   spot.classList.add('done')
   spot.title = 'Drag to move, drag the corner to resize, click to sign again'
   if (!doc.mock) layoutSpot(doc)
+  if (!placed[doc.n]) signedAt[doc.n] = new Date()
   placed[doc.n] = true
-  doc.panel.querySelector('.doc').classList.add('signed')
-  markSteps()
+  updateSide()
+  updateProgress()
 }
 
 /** The spot's CSS box from its PDF box (or the marked spot before anything is placed). */
@@ -365,19 +510,16 @@ function dragOn(doc, tab) {
   tab.addEventListener('pointercancel', () => { start = null })
 }
 
-/** The stepper's ticks: a signed document shows a check instead of its number. */
-function markSteps() {
-  Array.from($('steps').children).forEach((li, k) => {
-    const s = steps[k]
-    const done = s.kind === 'doc' && !!placed[s.doc.n]
-    li.classList.toggle('done', done)
-    li.querySelector('.num').textContent = done ? '✓' : String(k + 1)
-  })
+/** The "Sign here" tag on the signing field, with the pen before the words. */
+function signHereTab() {
+  const tab = el('button', { type: 'button', class: 'spot', text: 'Sign here' })
+  tab.prepend(icon('pen', 15))
+  return tab
 }
 
 function spotTab(doc, where, base, scale) {
   // PDF points, origin bottom-left, to CSS pixels from the top-left of the page.
-  const tab = el('button', { type: 'button', class: 'spot', text: 'Sign here' })
+  const tab = signHereTab()
   doc.scale = scale
   doc.pageWidth = base.width
   doc.pageHeight = base.height
@@ -389,17 +531,11 @@ function spotTab(doc, where, base, scale) {
   return tab
 }
 
-/** The width a page is drawn at: the block's inner width, so the paper reads at full size. */
-function pageWidth(host) {
-  const style = getComputedStyle(host)
-  return Math.max(280, host.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
-}
-
 async function drawPages(doc) {
   const host = doc.pages
   const pdf = doc.loaded
   if (host.clientWidth === 0) return
-  const width = pageWidth(host)
+  const width = Math.max(280, host.clientWidth)
   if (doc.drawnAt === width) return
   doc.drawnAt = width
   host.textContent = ''
@@ -421,25 +557,12 @@ async function drawPages(doc) {
     if (doc.where && doc.where.page === num - 1) wrap.appendChild(spotTab(doc, doc.where, base, scale))
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
   }
-  doc.jump.hidden = !doc.spot
-  updateCounter(doc)
-  if (!doc.download.href) {
+  if (!doc.href) {
     // The same bytes the viewer drew, offered as a file to read offline.
     const bytes = await pdf.getData()
-    doc.download.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-    doc.download.hidden = false
+    doc.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    if (steps[current] && steps[current].doc === doc) updateSide()
   }
-}
-
-/** "Page x of y": the page whose top is closest above the middle of the viewer. */
-function updateCounter(doc) {
-  const pdf = doc.loaded
-  if (!pdf) return
-  const pages = Array.from(doc.pages.querySelectorAll('.page'))
-  const middle = doc.pages.scrollTop + doc.pages.clientHeight / 2
-  let page = 1
-  pages.forEach((p, i) => { if (p.offsetTop <= middle) page = i + 1 })
-  doc.counter.textContent = `Page ${page} of ${pdf.numPages}`
 }
 
 function renderDoc(doc) {
@@ -447,7 +570,7 @@ function renderDoc(doc) {
   if (PREVIEW && !doc.pdf) {
     // No PDF in hand: a blank page stands in, with the tab where it will be.
     const mock = el('div', { class: 'mock', text: 'The document appears here, with its signing spot.' })
-    const tab = el('button', { type: 'button', class: 'spot', text: 'Sign here' })
+    const tab = signHereTab()
     tab.style.cssText = 'left:12%;bottom:14%;width:150px;height:36px'
     tab.addEventListener('click', () => openPad(doc))
     doc.spot = tab
@@ -459,7 +582,6 @@ function renderDoc(doc) {
     mock.appendChild(tab)
     host.textContent = ''
     host.appendChild(mock)
-    doc.jump.hidden = false
     return
   }
   const source = doc.pdf
@@ -478,6 +600,7 @@ function renderDoc(doc) {
 const veil = $('veil')
 const pad = $('sig')
 const ctx = pad.getContext('2d')
+const INK = '#0d3b8c'
 let drawing = false
 let dirty = false
 let pending = null
@@ -492,7 +615,7 @@ function sizeCanvas() {
   ctx.lineWidth = 2
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.strokeStyle = '#20394d'
+  ctx.strokeStyle = INK
   dirty = false
 }
 function openPad(doc) {
@@ -520,7 +643,7 @@ let styleId = STYLES[0].id
 
 /** The name without diacritics, the way a Vietnamese name is signed on an English letter. */
 function plainName(name) {
-  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim()
+  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim()
 }
 
 function showTab(which) {
@@ -566,7 +689,7 @@ async function typedSignature(name, family) {
   c.width = Math.ceil(m.width + pad * 2)
   c.height = Math.ceil(size * 1.5)
   g.font = font
-  g.fillStyle = '#20394d'
+  g.fillStyle = INK
   g.textBaseline = 'alphabetic'
   g.fillText(name, pad, size * 1.05)
   return c.toDataURL('image/png')
@@ -605,7 +728,7 @@ $('clear').addEventListener('click', sizeCanvas)
 $('cancel').addEventListener('click', closePad)
 veil.addEventListener('click', (e) => { if (e.target === veil) closePad() })
 $('apply').addEventListener('click', async () => {
-  const status = $('status')
+  const status = $('pad-status')
   let next
   if (tab === 'draw') {
     if (!dirty) { status.textContent = 'Please sign in the box first.'; return }
@@ -665,6 +788,29 @@ function showErrors(errors) {
   if (first) first.focus()
 }
 
+/** The last screen: a check, the start date, one card per document and one for the details. */
+function renderDone() {
+  submitted = true
+  const now = new Date()
+  $('form').hidden = true
+  $('progress').hidden = true
+  $('done-title').textContent = displayName ? `You're all set, ${displayName}` : "You're all set"
+  const text = $('done-text')
+  text.textContent = 'Thank you — your documents are signed and HR has your details.'
+  if (startDate) text.append(' See you on ', el('b', { text: longDate(startDate) }), '.')
+  const grid = $('done-grid')
+  grid.textContent = ''
+  const card = (name, meta, href) => {
+    const parts = [el('div', { class: 'tile' }, [icon('file', 16)]), el('div', {}, [el('div', { class: 'name', text: name }), el('div', { class: 'meta', text: meta })])]
+    if (href) parts.push(el('a', { class: 'linkb', href, download: `${name}.pdf` }, [icon('download', 13), 'Download PDF']))
+    return el('div', { class: 'done-card' }, parts)
+  }
+  docs.forEach((d) => grid.appendChild(card(d.label, 'Signed ' + dayOf(signedAt[d.n] || now), d.href)))
+  grid.appendChild(card('Your details', 'Submitted ' + dayOf(now), null))
+  $('done').hidden = false
+  window.scrollTo(0, 0)
+}
+
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault()
   if (PREVIEW) return
@@ -688,10 +834,7 @@ $('form').addEventListener('submit', async (e) => {
     })
     if (res.ok) {
       clearTimeout(timer)
-      $('form').hidden = true
-      $('steps').hidden = true
-      $('done').hidden = false
-      window.scrollTo(0, 0)
+      renderDone()
       return
     }
     submit.disabled = false
