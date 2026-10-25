@@ -19,4 +19,5 @@ e-mail matched, from the onboarding API, and goes back there on submit.
 | `.nojekyll` | Tells GitHub Pages to serve the files as they are. |
 
 The source of truth is `onboarding/site/` in the HiveFin repository; this repository is
-published from it with `onboarding/site/publish.sh`. Edit there, not here.
+published from it with `onboarding/site/publish.sh`, which takes the committed tree at HEAD (never
+the working directory) and checks the PDF.js hashes above before pushing. Edit there, not here.

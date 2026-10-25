@@ -287,6 +287,9 @@ function renderForm(state) {
   }
   inputs = Array.from(sections.querySelectorAll('input[data-key]'))
   inputs.forEach((i) => i.addEventListener('input', () => { saveDraftSoon(); updateSubmit() }))
+  // Leaving a field saves at once; the draft the server holds is where we start from.
+  inputs.forEach((i) => i.addEventListener('change', () => { saveDraft() }))
+  lastSaved = JSON.stringify(collect())
   $('consent-text').textContent = state.consent_text
   $('consent').checked = false
 
@@ -409,8 +412,11 @@ window.addEventListener('resize', () => {
   }, 200)
 })
 
-// Draft: saved a moment after typing stops, so closing the tab loses nothing.
+// Draft: saved a few seconds after typing stops, when a field is left, and when the tab is
+// hidden, so closing it loses nothing. Only what changed is sent: the API counts every call,
+// and typing must not spend the budget the documents and the submit need.
 let timer = null
+let lastSaved = ''
 function collect() {
   const out = {}
   inputs.forEach((i) => { out[i.getAttribute('data-key')] = i.value })
@@ -419,8 +425,26 @@ function collect() {
 function saveDraftSoon() {
   if (PREVIEW) return
   clearTimeout(timer)
-  timer = setTimeout(() => { call('POST', '/draft', { values: collect() }).catch(() => {}) }, 1500)
+  timer = setTimeout(saveDraft, 4000)
 }
+async function saveDraft() {
+  if (PREVIEW || submitted) return
+  clearTimeout(timer)
+  const values = collect()
+  const json = JSON.stringify(values)
+  if (json === lastSaved) return
+  try {
+    const res = await call('POST', '/draft', { values })
+    if (res.ok) lastSaved = json
+    // The session ran out while typing: say so now, not at submit, while the words are fresh.
+    else if (res.status === 401) sessionExpired()
+  } catch { /* the next pause tries again */ }
+}
+function sessionExpired() {
+  clearTimeout(timer)
+  message('Your session has expired', 'Please open the link again and enter your e-mail once more. What you typed before the session ended has been kept.')
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveDraft() })
 
 // ---- the documents, drawn page by page, each with its signing spot ----------------------------
 
@@ -839,7 +863,7 @@ $('form').addEventListener('submit', async (e) => {
       return
     }
     submit.disabled = false
-    if (res.status === 401) { message('Your session has expired', 'Please open the link again and enter your e-mail once more. What you typed has been kept.'); return }
+    if (res.status === 401) { sessionExpired(); return }
     if (res.data && res.data.errors) { showErrors(res.data.errors); status.textContent = 'Please check the highlighted fields.' }
     else status.textContent = (res.data && res.data.error) || 'Could not submit, please try again.'
   } catch {
